@@ -1,3 +1,5 @@
+# command: python ./StableDiffusionFork/scripts/txt2img.py --n_samples 1 --prompt "a professional photograph of an astronaut riding a horse" --ckpt /home/jacob/projects/DeepLearningFinalProject/StableDiffusionFork/checkpoints/512-base-ema.ckpt --config ./StableDiffusionFork/configs/stable-diffusion/v2-inference.yaml
+
 import argparse, os
 import cv2
 import torch
@@ -182,7 +184,7 @@ def parse_args():
         type=str,
         help="Device on which Stable Diffusion will be run",
         choices=["cpu", "cuda"],
-        default="cpu"
+        default="cuda"
     )
     parser.add_argument(
         "--torchscript",
@@ -331,6 +333,7 @@ def main(opt):
                 x_samples_ddim = model.decode_first_stage(samples_ddim)
 
     precision_scope = autocast if opt.precision=="autocast" or opt.bf16 else nullcontext
+    print(model.device)
     with torch.no_grad(), \
         precision_scope(opt.device), \
         model.ema_scope():
