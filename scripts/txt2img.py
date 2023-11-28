@@ -260,6 +260,7 @@ def main(opt):
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
     if opt.torchscript or opt.ipex:
+        print('here 1')
         transformer = model.cond_stage_model.model
         unet = model.model.diffusion_model
         decoder = model.first_stage_model.decoder
@@ -275,6 +276,7 @@ def main(opt):
             raise ValueError("Use configs/stable-diffusion/intel/ configs for your model if you'd like to run it on CPU.")
 
         if opt.ipex:
+            print('here')
             import intel_extension_for_pytorch as ipex
             bf16_dtype = torch.bfloat16 if opt.bf16 else None
             transformer = transformer.to(memory_format=torch.channels_last)
@@ -287,6 +289,7 @@ def main(opt):
             decoder = ipex.optimize(decoder, level="O1", auto_kernel_selection=True, inplace=True, dtype=bf16_dtype)
 
         if opt.torchscript:
+            print('torchscript')
             with torch.no_grad(), additional_context:
                 # get UNET scripted
                 if unet.use_checkpoint:
