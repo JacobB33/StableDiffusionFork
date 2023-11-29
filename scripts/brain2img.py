@@ -1,5 +1,4 @@
-# command: python ./StableDiffusionFork/scripts/txt2img.py --n_samples 1 --prompt "a professional photograph of an astronaut riding a horse" --ckpt /home/jacob/projects/DeepLearningFinalProject/StableDiffusionFork/checkpoints/512-base-ema.ckpt --config ./StableDiffusionFork/configs/stable-diffusion/v2-inference.yaml
-
+# command: python ./StableDiffusionFork/scripts/brain2img.py --n_samples 1 --ckpt /home/jacob/projects/DeepLearningFinalProject/StableDiffusionFork/checkpoints/512-base-ema.ckpt --config ./StableDiffusionFork/configs/stable-diffusion/v2-inference.yaml
 import argparse, os
 import cv2
 import torch
@@ -66,7 +65,7 @@ def parse_args():
     # )
     parser.add_argument('--brain_checkpoint',
                         type=str,
-                        default='/home/jacob/projects/DeepLearningFinalProject/use_first_embbed.pt',
+                        default='/home/jacob/projects/DeepLearningFinalProject/full-run-5.pt',
                         help='Path to the brain embedder checkpoint')
     parser.add_argument('--data_path',
                         type=str,
@@ -74,7 +73,7 @@ def parse_args():
                         help='Path to the processed data')
     parser.add_argument('--index',
                         type=int,
-                        default=0, #510,
+                        default=26741,#0, #510,
                         help='Index of the brain scan to use'
     )
     parser.add_argument(
@@ -223,7 +222,7 @@ def load_bs_embedder(self):
 
 
 def main(opt):
-    seed_everything(opt.seed)
+    # seed_everything(opt.seed)
 
     config = OmegaConf.load(f"{opt.config}")
     device = torch.device("cuda") if opt.device == "cuda" else torch.device("cpu")
