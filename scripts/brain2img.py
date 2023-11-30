@@ -21,7 +21,9 @@ from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 from training.networks import BrainScanEmbedder
 from training.configs.configs import Snapshot, ModelConfig
 import json
+
 torch.set_grad_enabled(False)
+
 
 def chunk(it, size):
     it = iter(it)
@@ -63,25 +65,30 @@ def parse_args():
     #     default="a professional photograph of an astronaut riding a triceratops",
     #     help="the prompt to render"
     # )
-    parser.add_argument('--brain_checkpoint',
-                        type=str,
-                        default='/home/jacob/projects/DeepLearningFinalProject/full-run-5.pt',
-                        help='Path to the brain embedder checkpoint')
-    parser.add_argument('--data_path',
-                        type=str,
-                        default='/home/jacob/projects/DeepLearningFinalProject/data/processed_data/',
-                        help='Path to the processed data')
-    parser.add_argument('--index',
-                        type=int,
-                        default=26741,#0, #510,
-                        help='Index of the brain scan to use'
+    parser.add_argument(
+        "--brain_checkpoint",
+        type=str,
+        default="/home/jacob/projects/DeepLearningFinalProject/zcheckpoints/attention-1.pt",
+        help="Path to the brain embedder checkpoint",
+    )
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default="/home/jacob/projects/DeepLearningFinalProject/data/processed_data/",
+        help="Path to the processed data",
+    )
+    parser.add_argument(
+        "--index",
+        type=int,
+        default=26741,  # 0, #510,
+        help="Index of the brain scan to use",
     )
     parser.add_argument(
         "--outdir",
         type=str,
         nargs="?",
         help="dir to write results to",
-        default="outputs/txt2img-samples"
+        default="outputs/attention-1-train-test/",
     )
     parser.add_argument(
         "--steps",
@@ -91,17 +98,17 @@ def parse_args():
     )
     parser.add_argument(
         "--plms",
-        action='store_true',
+        action="store_true",
         help="use plms sampling",
     )
     parser.add_argument(
         "--dpm",
-        action='store_true',
+        action="store_true",
         help="use DPM (2) sampler",
     )
     parser.add_argument(
         "--fixed_code",
-        action='store_true',
+        action="store_true",
         help="if enabled, uses the same starting code across all samples ",
     )
     parser.add_argument(
@@ -113,7 +120,7 @@ def parse_args():
     parser.add_argument(
         "--n_iter",
         type=int,
-        default=3,
+        default=2,
         help="sample this often",
     )
     parser.add_argument(
@@ -180,7 +187,7 @@ def parse_args():
         type=str,
         help="evaluate at this precision",
         choices=["full", "autocast"],
-        default="autocast"
+        default="autocast",
     )
     parser.add_argument(
         "--repeat",
@@ -193,16 +200,15 @@ def parse_args():
         type=str,
         help="Device on which Stable Diffusion will be run",
         choices=["cpu", "cuda"],
-        default="cuda"
+        default="cuda",
     )
     parser.add_argument(
         "--bf16",
-        action='store_true',
+        action="store_true",
         help="Use bfloat16",
     )
     opt = parser.parse_args()
     return opt
-
 
 
 def load_bs_embedder(self):
@@ -215,14 +221,16 @@ def load_bs_embedder(self):
         raise FileNotFoundError
 
     snapshot = Snapshot(**snapshot_data)
-    embedder = BrainScanEmbedder(ModelConfig([8, 16, 32, 64, 77]))
+    embedder = BrainScanEmbedder(ModelConfig([8, 16, 32, 48, 77], -1, 8))
     embedder.load_state_dict(snapshot.model_state)
     return embedder.to(opt.device)
 
 
-
 def main(opt):
     # seed_everything(opt.seed)
+    print("loading brain scan embedder")
+    embedder = load_bs_embedder(opt)
+
 
     config = OmegaConf.load(f"{opt.config}")
     device = torch.device("cuda") if opt.device == "cuda" else torch.device("cpu")
@@ -245,12 +253,10 @@ def main(opt):
 
     batch_size = opt.n_samples
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
-    
+
     # prompt = opt.prompt
     # assert prompt is not None
     # data = [batch_size * [prompt]]
-
- 
 
     sample_path = os.path.join(outpath, "samples")
     os.makedirs(sample_path, exist_ok=True)
@@ -260,77 +266,143 @@ def main(opt):
 
     start_code = None
     if opt.fixed_code:
-        start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+        start_code = torch.randn(
+            [opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device
+        )
 
-    precision_scope = autocast if opt.precision=="autocast" or opt.bf16 else nullcontext
+    precision_scope = (
+        autocast if opt.precision == "autocast" or opt.bf16 else nullcontext
+    )
     print(model.device)
+
+    indexs =  [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            65,
+            22557,
+            6507,
+            15218,
+            13105,
+            3416,
+        ]
     
-    print('loading brain scan embedder')
-    embedder = load_bs_embedder(opt)
-    with torch.no_grad(), \
-        precision_scope(opt.device), \
-        model.ema_scope():
+    data_json = os.path.join(opt.data_path, "dataset.json")
+    data = json.load(open(data_json))
+
+    with torch.no_grad(), precision_scope(opt.device), model.ema_scope():
+        for i in indexs:
+            
             all_samples = list()
+            new_save_path = os.path.join(outpath, f"results_image_{i}")
+            os.makedirs(new_save_path, exist_ok=True)
+            annotation = data["annotations"][i]
+            beta_path = annotation["beta"]
+            image_info = data["images"][str(annotation["img"])]
+            target_embed = image_info['captions'][0]['embd']
+            target_embed = np.load(os.path.join(opt.data_path, target_embed))
+            
+            uc = None
+            if opt.scale != 1.0:
+                # assert False
+                uc = model.get_learned_conditioning(batch_size * [""])
+            
+            shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+            samples, _ = sampler.sample(
+                S=opt.steps,
+                conditioning=torch.from_numpy(target_embed).to(opt.device).unsqueeze(0),
+                batch_size=1,
+                shape=shape,
+                verbose=False,
+                unconditional_guidance_scale=opt.scale,
+                unconditional_conditioning=uc,
+                eta=opt.ddim_eta,
+                x_T=start_code,
+            )
+
+            x_samples = model.decode_first_stage(samples)
+            x_sample = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)[0]
+
+            
+            x_sample = 255.0 * rearrange(
+                x_sample.cpu().numpy(), "c h w -> h w c"
+            )
+            img = Image.fromarray(x_sample.astype(np.uint8))
+            img.save(os.path.join(new_save_path, f"target_generation.png"))         
+            
+                        
+            c = (
+                torch.from_numpy(
+                    np.load(os.path.join(opt.data_path, beta_path)).astype(
+                        np.float32
+                    )
+                )
+                .to(opt.device)
+                .unsqueeze(0)
+            )
+
+            c = embedder(c)
+
+            im = Image.open(os.path.join(opt.data_path, image_info["im_path"]))
+            im.save(os.path.join(new_save_path, f"target_{i}.png"))
+            im_num = 0
             for n in trange(opt.n_iter, desc="Sampling"):
                 uc = None
                 if opt.scale != 1.0:
+                    # assert False
                     uc = model.get_learned_conditioning(batch_size * [""])
 
                 # Get the conditioning from the brain scan
-                data_json = os.path.join(opt.data_path, 'dataset.json')
-                data = json.load(open(data_json))
-                
-                print(opt.index)
-                annotation = data['annotations'][opt.index]
-                beta_path = annotation['beta']
-                image_info = data['images'][str(annotation['img'])]
-                print(image_info['captions'])
-                c = torch.from_numpy(np.load(os.path.join(opt.data_path, beta_path)).astype(np.float32)).to(opt.device).unsqueeze(0)
-                
-                c = embedder(c)
-                np.save('c2.npy', c.cpu().numpy())
-                im = Image.open(os.path.join(opt.data_path, image_info['im_path']))
-                im.save(os.path.join(outpath, "target.png"))
-                
-                
+
+
+
                 shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                samples, _ = sampler.sample(S=opt.steps,
-                                                    conditioning=c,
-                                                    batch_size=opt.n_samples,
-                                                    shape=shape,
-                                                    verbose=False,
-                                                    unconditional_guidance_scale=opt.scale,
-                                                    unconditional_conditioning=uc,
-                                                    eta=opt.ddim_eta,
-                                                    x_T=start_code)
+                samples, _ = sampler.sample(
+                    S=opt.steps,
+                    conditioning=c,
+                    batch_size=opt.n_samples,
+                    shape=shape,
+                    verbose=False,
+                    unconditional_guidance_scale=opt.scale,
+                    unconditional_conditioning=uc,
+                    eta=opt.ddim_eta,
+                    x_T=start_code,
+                )
 
                 x_samples = model.decode_first_stage(samples)
                 x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
-                for x_sample in x_samples:
-                    x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                for i, x_sample in enumerate(x_samples):
+                    x_sample = 255.0 * rearrange(
+                        x_sample.cpu().numpy(), "c h w -> h w c"
+                    )
                     img = Image.fromarray(x_sample.astype(np.uint8))
                     # img = put_watermark(img, wm_encoder)
-                    img.save(os.path.join(sample_path, f"{base_count:05}.png"))
+                    img.save(os.path.join(new_save_path, f"img_{im_num}.png"))
                     base_count += 1
                     sample_count += 1
+                    im_num += 1
 
                 all_samples.append(x_samples)
 
             # additionally, save as grid
             grid = torch.stack(all_samples, 0)
-            grid = rearrange(grid, 'n b c h w -> (n b) c h w')
+            grid = rearrange(grid, "n b c h w -> (n b) c h w")
             grid = make_grid(grid, nrow=n_rows)
 
             # to image
-            grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
+            grid = 255.0 * rearrange(grid, "c h w -> h w c").cpu().numpy()
             grid = Image.fromarray(grid.astype(np.uint8))
             # grid = put_watermark(grid, wm_encoder)
-            grid.save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
+            grid.save(os.path.join(new_save_path, f"grid-{i}.png"))
             grid_count += 1
 
-    print(f"Your samples are ready and waiting for you here: \n{outpath} \n"
-          f" \nEnjoy.")
+    print(
+        f"Your samples are ready and waiting for you here: \n{outpath} \n" f" \nEnjoy."
+    )
 
 
 if __name__ == "__main__":
