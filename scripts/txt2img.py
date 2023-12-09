@@ -349,6 +349,11 @@ def main(opt):
                     if isinstance(prompts, tuple):
                         prompts = list(prompts)
                     c = model.get_learned_conditioning(prompts)
+                    # Add gaussian noise to c with mean of 0 and variance of 0.4
+                    old_c = c
+                    c = c + torch.randn_like(c) * 0.4
+                    print(f'loss is {torch.nn.functional.mse_loss(old_c, c)}')
+            
                     shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
                     samples, _ = sampler.sample(S=opt.steps,
                                                      conditioning=c,
