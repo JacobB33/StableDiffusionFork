@@ -80,7 +80,7 @@ def parse_args():
     parser.add_argument(
         "--index",
         type=int,
-        default=26741,  # 0, #510,
+        default=0,  # 0, #510,
         help="Index of the brain scan to use",
     )
     parser.add_argument(
@@ -275,26 +275,26 @@ def main(opt):
     )
     print(model.device)
 
-    indexs =  [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            65,
-            22557,
-            6507,
-            15218,
-            13105,
-            3416,
-        ]
+    # indexs =  [
+    #         0,
+    #         # 1,
+    #         # 2,
+    #         # 3,
+    #         # 4,
+    #         # 5,
+    #         # 65,
+    #         # 22557,
+    #         # 6507,
+    #         # 15218,
+    #         # 13105,
+    #         # 3416,
+    #     ]
     
     data_json = os.path.join(opt.data_path, "dataset.json")
     data = json.load(open(data_json))
 
     with torch.no_grad(), precision_scope(opt.device), model.ema_scope():
-        for i in indexs:
+        for i in [opt.index]:
             
             all_samples = list()
             new_save_path = os.path.join(outpath, f"results_image_{i}")
@@ -302,6 +302,7 @@ def main(opt):
             annotation = data["annotations"][i]
             beta_path = annotation["beta"]
             image_info = data["images"][str(annotation["img"])]
+            print(image_info)
             target_embed = image_info['captions'][0]['embd']
             target_embed = np.load(os.path.join(opt.data_path, target_embed))
             
